@@ -108,7 +108,7 @@ eda_trip_shared<-trips %>%
   mutate(eda_side = paste(cluster_side_start,cluster_side_end), eda_side = gsub("NA","",eda_side),
          eda_side = gsub(" ","", eda_side),eda_side = substr(eda_side,1,4),
          eda_side_of_city = ifelse(grepl("Nort", eda_side),"North/Northwest", ifelse(grepl("West", eda_side), "West", ifelse(
-           grepl("Sout", eda_side), "South/Southwest", "other")))) %>% #somebody please make this better. It takes
+           grepl("Sout", eda_side), "South/Southwest", "other")))) %>% # This takes
                                                                        #the origin EDA if the origin and destination
                                                                        #are both in EDAs.
   group_by(eda_side_of_city,is_shared, start_hour) %>%
