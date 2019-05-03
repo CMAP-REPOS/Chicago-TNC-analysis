@@ -44,6 +44,10 @@ trips <- as_tibble(trips) %>%
            trip_start_timestamp >= "2018-11-26 00:00:00" & trip_start_timestamp <= "2018-12-16 23:59:59") #removes holidays
 week<-c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
+## Run this to save you data locally and speed up next analysis
+#write_rds(trips, "trips.RData")
+#trips <- read_rds("trips.RData") ##Excludes holidays
+
 #Match trip origins to EDAs
 trips["eda_start_tract"]<-eda$GEOID10[match(trips$pickup_census_tract, eda$GEOID10)]
 trips["eda_cluster_start"]<-eda$cluster_name[match(trips$eda_start_tract, eda$GEOID10)]

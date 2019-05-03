@@ -1,0 +1,207 @@
+---
+title: "New data allows an initial look at ride hailing in Chicago"
+author: "CMAP"
+date: "5/3/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(tidyverse)
+library(ggplot2)
+library(RSocrata)
+library(tidycensus)
+setwd("~/GitHub/Chicago-TNC-analysis")
+
+trips <- read_rds("trips.RData") ##Excludes holidays #see line 47 in other script for information about how to save data locally. 
+
+trips <- as_tibble(trips) %>%
+  mutate(
+    pickup_census_tract = as.character(pickup_census_tract),
+    dropoff_census_tract = as.character(dropoff_census_tract),
+    trip_minutes = trip_seconds / 60,
+    start_hour = as.numeric(strftime(trip_start_timestamp, format="%H")),
+    start_minute = as.numeric(strftime(trip_start_timestamp, format="%M")),
+    start_time = (as.numeric(str_c(start_hour, start_minute,sep= "."))),
+    day_of_week = as.factor(strftime(trip_start_timestamp, format="%a")),
+    is_weekday = !day_of_week %in% c("Sat", "Sun"),
+    is_shared = trips_pooled > 1,
+    total_cost = fare + additional_charges) %>%
+  filter(trip_start_timestamp >= "2018-11-01 00:00:00" & trip_start_timestamp <= "2018-11-18 23:59:59" |
+           trip_start_timestamp >= "2018-11-26 00:00:00" & trip_start_timestamp <= "2018-12-16 23:59:59") #removes holidays
+week<-c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+```
+
+
+The City of Chicago has released data on transportation network company (TNC) trips, which will help illustrate the effects of ride hailing services such as Uber, Lyft, and Via on the transportation system, and improve policy and investment decision making. 
+
+Large metropolitan areas such as Chicago already have rich data on the geographic and temporal patterns of public transportation and road usage, and the City has previously made data on taxi trips and Divvy bikeshare use public. But while new TNC services can change movement patterns and affect other modes, including transit, they’ve been under no obligation to release data to the public. The new TNC data is an exciting first step in piecing together a picture of changing travel patterns within Chicago. 
+
+ON TO 2050 recommends harnessing the benefits of new technology to improve travel and support inclusive growth in the region while acknowledging that most new technologies have both benefits and drawbacks. This analysis examines preliminary findings for trips to and from Economically Disconnected Areas (EDAs), and TNC use during congested travel times. EDAs are geographic areas that are not well connected to regional economic progress and have a concentration of low income and minority or limited English proficiency residents. Data show that rides to and from EDAs are longer and more frequently shared by multiple riders than trips outside of EDAs. Overall, TNC usage peaks on Friday and Saturday nights as well as during weekday rush hour travel periods. 
+
+Transportation systems are regional in nature, meaning that TNC rides do not stop at municipal boundaries. Although there are significant limitations to the data set, explored below, the data will aid in local and regional decision making. Going forward, full understanding of TNC patterns and movement that can inform transportation planning will ultimately require more complete data and regional coverage.
+
+## What is included in the Chicago data release?
+As a part of its licensing of ride hailing providers (currently Uber, Lyft, and Via), the City of Chicago requires companies to report on their activities. Publicly available data is related to vehicles, drivers, and trips. Multiple steps have been taken to protect driver and rider privacy including summarizing trip origin and destination the Census Tract or Chicago Community Area level. Origins and destinations outside the city limits are unavailable, making it difficult to discern TNC’s real impact on the regional transportation system. Trip start and end times are rounded to the nearest 15 minutes, and fares are rounded to the nearest $2.50. This analysis is based on the trips file, which at the time of this publication contained information for November and December 2018. Because travel patterns in late November and late December are somewhat atypical due to the major holidays, CMAP omitted holiday periods (November 19-25 and December 17-31) from this analysis.
+
+## Where and when do trips occur?
+More than 17 million trips were taken during the two-month period, an average of 286,000 trips per day. Eighty-two percent of trips were individual bookings, while the remaining trips involved two or more separate customers traveling together, known as shared rides. The map below shows that trips predominantly began around the central business district, as well as Midway and O’Hare airports. This pattern is not unexpected as these are among the largest generators of travel within the region. The map also shows EDAs clusters located in Chicago, grouped for purposes of this analysis into North and Northwest Side, West Side, and South and Southwest Side.
+
+```{r Map data, echo=FALSE, include= FALSE}
+# Note, this section requires a Census API key. 
+# You can get one here https://api.census.gov/data/key_signup.html
+# census_api_key("YOUR API KEY GOES HERE")  #run this line with your key. 
+
+Cook_tract <- get_acs(geography = "tract",  state = 17, county = "031",  variables = "B19013_001", geometry = TRUE )
+
+trip_count <- trips %>%
+  group_by(pickup_census_tract) %>%
+  summarise(pu_count = n())
+
+Cook_tract <- left_join(Cook_tract, trip_count, by = c("GEOID"= "pickup_census_tract"))
+```
+
+``` {r Map}
+Cook_tract%>%
+  ggplot(aes(fill = pu_count)) + 
+  geom_sf(color = NA) + 
+  scale_fill_viridis_c(option = "magma") 
+```
+
+The chart below shows the number of trips citywide by time of day for each day of the week. On weekdays, TNC usage spikes during morning and afternoon peak commute periods, when transit is typically available and additional roadway traffic exacerbates congestion. TNC usage is highest on Friday and Saturday nights, when other forms of transportation may be less attractive due to limited service or safety concerns. This usage pattern is very similar to that found in a 2017 San Francisco TNC study. 
+
+``` {r Trips by Time of Day}
+
+hour_chart <- trips %>%
+  group_by(day_of_week, date,  start_hour) %>%
+  summarise(count = n()) %>%
+  ungroup(date) %>%
+  group_by(day_of_week, start_hour) %>%
+  summarise(by_day = mean(count))
+
+hour_chart$day_of_week = factor(hour_chart$day_of_week, levels = week)
+
+ggplot(hour_chart) +
+  geom_line(mapping = aes(x=start_hour, y = by_day, color = day_of_week), size = 2) +
+  facet_grid(cols = vars(hour_chart$day_of_week)) +
+  labs(x = "", y = "trips by hour", title = "Average trips per day by hour, November-December 2018",
+            subtitle = "Note: Nov. 19-25 and Dec. 17-31 have been excluded due to holiday impacts on travel patterns" )+
+  theme(axis.text.x=element_blank())
+
+```
+
+## Trips to and from Economically Disconnected Areas more likely to be shared and longer 
+ON TO 2050 calls on the region to leverage the transportation network to promote inclusive growth. Previous CMAP analysis has shown that EDAs in Chicago have strong transit access, though connections to employment centers and other destinations outside of downtown can be limited. Employment centers located in areas with poor transit access can create longer and more difficult commutes for all workers, not just those that live in EDAs. However, data show that workers in EDAs spend up to 58 additional hours each year commuting compared with the average resident in the region. Further analysis is warranted to determine the extent to which TNCs may be assisting with first- and last-mile solutions, or even serving as the primary commute mode for residents of EDAs, though the dataset cannot indicate whether TNC trips to and from EDAs are used for convenience or out of necessity.
+
+Of the 12 million TNC trips taken during non-holiday periods in November and December 2018, approximately 17 percent either originated or ended in an EDA. These trips tended to follow the same time of day trends as the rest of the city, but some unique patterns emerged in other areas. Of trips that connected an EDA to a non-EDA location, 38 percent were to the Loop, Near North, and Near West sides. Weekday trips starting or ending in EDAs had a higher proportion of shared rides than trips taken outside of EDAs. The South and Southwest Side and the West Side EDAs had the highest proportion of shared trips, with afternoon peak periods as high as 39 percent and 37 percent respectively, nearly double the rate for non-EDAs. The chart below illustrates shared trips starting or ending in EDA clusters and the remainder of the City.
+
+``` {r Pct Shared Trips, message=FALSE}
+
+eda_trip_shared<-trips %>%
+  select(cluster_side_start, cluster_side_end, is_shared, is_eda,is_weekday,start_hour) %>%
+  filter(is_eda==TRUE, is_weekday == TRUE) %>%
+  mutate(eda_side = paste(cluster_side_start,cluster_side_end), eda_side = gsub("NA","",eda_side),
+         eda_side = gsub(" ","", eda_side),eda_side = substr(eda_side,1,4),
+         eda_side_of_city = ifelse(grepl("Nort", eda_side),"North/Northwest", ifelse(grepl("West", eda_side), "West", ifelse(
+           grepl("Sout", eda_side), "South/Southwest", "other")))) %>% # This takes
+                                                                       #the origin EDA if the origin and destination
+                                                                       #are both in EDAs.
+  group_by(eda_side_of_city,is_shared, start_hour) %>%
+  summarize(count = n())
+trips_shared<-trips %>%
+  select(is_shared, is_eda,is_weekday,start_hour) %>%
+  filter(is_eda==FALSE, is_weekday == TRUE) %>%
+  group_by(is_shared, start_hour) %>%
+  summarize(count = n())
+eda_trip_shared<-eda_trip_shared %>%
+  full_join(trips_shared) %>%
+  spread(key=is_shared, value = count) %>%
+  select(eda_side = eda_side_of_city, start_hour, not_shared = "FALSE", shared = "TRUE") %>%
+  mutate(shared_pct = shared/(not_shared + shared))
+
+ggplot(eda_trip_shared)+
+  geom_line(mapping = aes(x=start_hour, y = shared_pct, group = eda_side, color = eda_side), size = 1.5)+
+  labs(x = "Time of day", y = "percent rides shared", title = "Percent trips shared by EDAs, weekdays")+
+  scale_color_discrete(name = "",
+                       labels = c("North/Northwest Side", "South/Southwest Side", "West Side", "Non EDA"))
+
+
+
+```
+
+The median length of trips starting or ending in EDAs was 4.3 miles, whereas the median length of other trips was 3.4 miles. Among the EDAs, trips starting or ending in the South and Southwest Side cluster were longest at all points throughout the average weekday. Of trips to and from this EDA, the longest trips occurred at 5:00 a.m. on weekdays, with median lengths reaching above seven miles. This was likely influenced by the high number of shared trips in the EDA, which can extend the length of travel. Additionally, more than 20 percent of trips to this EDA were going to or coming from the Loop and areas surrounding downtown, further increasing the median trip length for the South Chicago portion of the cluster by up to two miles at certain points during the day. Trips outside of EDAs tended to have the shortest median trip length, due in part to the high number of trips in and around downtown taken by residents and tourists alike. However, between 4:00-6:00 a.m. on weekdays, lengths for trips starting or ending outside EDAs increased to nearly 6 miles. This trend of long trips in the pre-rush hour period occurred in all EDAs as well, possibly indicating commuters across the city are using TNCs for work commutes during this period. 
+
+``` {r Median Trip Length, message=FALSE}
+eda_trip_length<-trips %>%
+  select(cluster_side_start, cluster_side_end, trip_minutes, trip_miles, is_eda,is_weekday,start_hour) %>%
+  filter(!is.na(trip_minutes), !is.na(trip_miles), is_eda==TRUE, is_weekday == TRUE) %>% #takes out records that
+                                                                                         #are missing time or length
+  mutate(eda_side = paste(cluster_side_start,cluster_side_end), eda_side = gsub("NA","",eda_side),
+         eda_side = gsub(" ","", eda_side),eda_side = substr(eda_side,1,4),
+         eda_side2 = ifelse(grepl("Nort", eda_side),"North/Northwest", ifelse(grepl("West", eda_side), "West", ifelse(
+           grepl("Sout", eda_side), "South/Southwest", "other")))) %>%
+  group_by(eda_side2, start_hour, is_weekday) %>%
+  summarize(med_length = median(trip_miles), med_time = median(trip_minutes), count = n())
+
+trip_length <-trips %>%
+  select(trip_minutes, trip_miles, is_eda,is_weekday,start_hour) %>%
+  filter(!is.na(trip_minutes), !is.na(trip_miles), is_eda==FALSE, is_weekday == TRUE) %>%
+  group_by(start_hour, is_weekday) %>%
+  summarize(med_length = median(trip_miles), med_time = median(trip_minutes), count = n())
+
+eda_trip_length <- full_join(eda_trip_length, trip_length)
+
+ggplot(eda_trip_length)+
+  geom_line(mapping = aes(x = start_hour, y = med_length, group = eda_side2, color = eda_side2), size = 2)+
+  labs(x = "time", y = "length (miles)", title = "Median weekday trip length for trips starting or ending in EDAs")+
+  scale_color_discrete(name = "",
+                       labels = c("North/Northwest Side", "South/Southwest Side", "West Side", "Non EDA"))+
+  ylim(2,8)
+
+```
+
+## Citywide TNC usage peaks during congested commute periods
+The average speed of TNCs across the city declined during traditional commuting hours, at the same time that the number of TNC trips peaked. By comparison, travel in all modes tends to peak during these times. If TNC trips are replacing trips that would have occurred via transit, carpool, biking, or walking, TNCs could exacerbate congestion. 
+``` {r Speed}
+
+#TNC Speed ----
+speed<-trips %>%
+  select(start_hour, trip_miles, trip_minutes, is_weekday) %>%
+  filter(!is.na(trip_minutes), !is.na(trip_miles),is_weekday == TRUE, trip_minutes > 0, trip_miles > 0) %>%
+  mutate(hour = trip_minutes/60, mph = trip_miles/hour) %>%
+  group_by(start_hour) %>%
+  summarize(mph = mean(mph))
+
+ggplot(speed)+
+  geom_line(mapping = aes(x = start_hour, y = mph), size = 2)+
+  labs(x = "time of day", y = "MPH", title = "Average speed, weekdays")
+
+```
+
+Shared trips, if taken by individuals who otherwise would have driven a personal vehicle or taken a solo TNC trip, could reduce congestion. This dataset indicates that, during congested periods, shared rides accounted for 18 percent or less of all rides, without insight on the modes these trips may have replaced. Other research using New York City data found that most TNC riders are shifting to shared trips from non-auto modes, which increases congestion. The same report also notes that TNC drivers spend approximately 40 percent of their time deadheading, or driving between trips with no passenger. A study in San Francisco estimated 20 percent of mileage was deadheading. Chicago’s data release does not contain information about deadheading, which can add to congestion. 
+
+## Additional TNC data is needed to understand the impacts of ride hailing
+ON TO 2050 calls for municipalities and transportation agencies to contractually require data sharing as a condition for private companies’ access to subsidies or public infrastructure (roadways, loading areas, etc.). More detailed TNC data could allow analysis of transportation network impacts such as congestion, transit ridership, and inclusive growth. Indeed, these analyses are absolutely necessary to understand the effects -- positive or negative -- that TNCs have on mobility and create appropriate public sector responses. For example, localities may want to provide incentives or disincentives for certain types of trips.
+
+While the recent data release is an important step that is recommended by ON TO 2050, this information does have limitations. Aggregating pickup and drop-off data to the Census tract level protects driver and rider privacy, but limits the ability to analyze local impacts. The effects of TNCs on the transit system -- particularly whether TNCs are replacing equivalent transit trips -- are difficult to measure given the scale and detail of the data provided. As noted above, lack of information on deadheading and vehicle dwell times also limits analysis of TNCs’ influence on congestion, as does lack of information on vehicle occupancy. 
+
+More localized data could support infrastructure or service improvements. For example, a high number of pickups and drop-offs at an intersection or corridor could lead to establishing a designated pickup/drop-off zone. A large number of peak commute hour TNC trips between two points served by a bus route could indicate that bus speed improvements or increased frequency of service is warranted. High usage between a suburban transit stop and an employment area might show demand for a more formal partnership between TNCs and affected municipalities. However, each of these findings requires detailed pickup and drop-off location information.
+
+Finally, ON TO 2050 acknowledges the additional transportation challenges facing people with disabilities. While the City does require TNCs to indicate whether or not a vehicle is wheelchair accessible, the released data provides no wheelchair accessibility information. Insight into the availability, use of, and travel and wait times for handicapped accessible vehicles within the region will be vital to improving transportation options for travelers with disabilities. 
+
+## Data collection and sharing should be expanded to the regional level
+The City’s release of TNC data represents a landmark in the understanding of TNCs and their impact on our transportation network. However, the data is limited to trips that start or end within the city, while TNC trips occur throughout northeastern Illinois and regularly cross municipal boundaries. To meet the need for comprehensive, regional data collection framework, a number of options exist. 
+
+The State of Illinois enacted legislation that regulates TNCs with regard to insurance, driver background, non-discrimination, use of drugs and alcohol, and certain operational requirements. Units of local government are prohibited from regulating TNCs in a manner less restrictive than that required by the State. The General Assembly could add data reporting to its existing requirements for TNCs. The State could then make anonymized information public, while permitting inquiries for more specific information under strict data sharing agreements. Over time, states and TNCs could develop consistent standards for data reporting to ease the regulatory burden by avoiding different standards in different states. 
+
+Another option would establish a data registry that compiles information from all transportation service providers, including TNCs and transit agencies. Administered by a third party, the registry would standardize data and make it available to a limited number of analytic centers such as universities with transportation or urban planning programs. Local and state officials -- under data sharing agreements -- could then request information related to a specific location, corridor, or trend. Any model involving a data registry would be complex, and issues regarding cost, coordination of specific requests, and response times would likely limit utility for local and regional transportation planning.
+
+Both of the above options would limit the number of entities that TNCs would be required to report to while enabling planners and policy makers to make data-driven investments. As with any data set containing sensitive or personally identifiable information, data security procedures must be followed to maintain driver and rider privacy, as well as sensitive business information. Some information may only be usable for analysis of travel, with limited public depiction of data.
+
+## Moving forward
+ON TO 2050’s goal of performance-based investment across the transportation system is dependent on the collection and sharing of public and private transportation provider data. A recently released report from a City of Chicago-led task force -- the Roadmap for the Future of Transportation and Mobility in Chicago -- similarly establishes a guiding principle that data and information be actionable, transparent, shared, and secure. Continuous release of this data by the City will help the public better understand the effects of TNCs on mobility in Chicago. More granular data -- shared securely with key users -- could provide even more insight.  
+
+TNCs are becoming an increasingly prevalent way of getting around, making it imperative to understand the impacts of these services. Ultimately, obtaining region- or statewide TNC data -- whether through state government, a third party data registry, or some other means -- will ensure that decision makers and the public have the information they need to understand, analyze, and improve the transportation system in northeastern Illinois. 
+
+Note: The City of Chicago released the TNC data on their publicly accessible data portal. To work with this data, CMAP used APIs to directly download the large data set, then used free open source statistical software R to analyze the data. The R code used to process this data is available on CMAP’s GitHub page, so that others can see and improve our analysis, or do their own. 
