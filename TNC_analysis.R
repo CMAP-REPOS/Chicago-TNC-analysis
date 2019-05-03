@@ -68,7 +68,7 @@ trip_count <- trips %>%
 
 Cook_tract <- left_join(Cook_tract, trip_count, by = c("GEOID"= "pickup_census_tract"))
 
-# Not this map includes tracts outside Chicago. This data should probably be removed. 
+#Note this map includes tracts outside Chicago. This data should probably be removed. 
 Cook_tract%>%
   ggplot(aes(fill = pu_count)) + 
   geom_sf(color = NA) + 
